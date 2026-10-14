@@ -1,0 +1,246 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      HAS_SIGNING: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' && secrets.BUILD_PROVISION_PROFILE_BASE64 != '' }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen and xcbeautify
+        run: brew install xcodegen xcbeautify
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Run unit tests
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for k,v in sorted(d.items(), reverse=True) if "iOS" in k for x in v if x["name"].startswith("iPhone")))')
+          echo "Simulator: $UDID"
+          set -o pipefail
+          xcodebuild test \
+            -project ShiftNote.xcodeproj \
+            -scheme ShiftNote \
+            -destination "id=$UDID" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/test.log" | xcbeautify --renderer github-actions || {
+            grep -E "error:|Test Case .* failed|XCTAssert" "$RUNNER_TEMP/test.log" | head -40 | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          }
+
+      # 署名なしの .ipa（ESign・Feather・Sideloadly などで自分で署名してインストールする用）
+      - name: Build unsigned IPA
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project ShiftNote.xcodeproj \
+            -scheme ShiftNote \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} 2>&1 | tee "$RUNNER_TEMP/unsigned.log" | xcbeautify --renderer github-actions || {
+            grep -E "error:" "$RUNNER_TEMP/unsigned.log" | head -40 | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          }
+          mkdir -p "$RUNNER_TEMP/unsigned/Payload" "$RUNNER_TEMP/ipa-unsigned"
+          cp -R "$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/ShiftNote.app" "$RUNNER_TEMP/unsigned/Payload/"
+          ls "$RUNNER_TEMP/unsigned/Payload/ShiftNote.app/PlugIns"
+          (cd "$RUNNER_TEMP/unsigned" && zip -qry "$RUNNER_TEMP/ipa-unsigned/ShiftNote-unsigned-${{ github.run_number }}.ipa" Payload)
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ runner.temp }}/ipa-unsigned/ShiftNote-unsigned-${{ github.run_number }}.ipa
+          archive: false
+          retention-days: 14
+
+      - name: Install signing certificate and profiles
+        if: env.HAS_SIGNING == 'true'
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          WIDGET_PROVISION_PROFILE_BASE64: ${{ secrets.WIDGET_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD || 'shiftnote-ci' }}
+          FALLBACK_BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+        run: |
+          set -euo pipefail
+          PB=/usr/libexec/PlistBuddy
+          CERT_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+
+          # プロファイルを取り込んで、plist に展開する
+          install_profile() {  # $1=base64, $2=name
+            local pp="$RUNNER_TEMP/$2.mobileprovision" plist="$RUNNER_TEMP/$2.plist"
+            echo -n "$1" | base64 --decode -o "$pp"
+            security cms -D -i "$pp" > "$plist"
+            cp "$pp" "$HOME/Library/MobileDevice/Provisioning Profiles/$($PB -c 'Print :UUID' "$plist").mobileprovision"
+            echo "$plist"
+          }
+          bundle_of() { local id; id=$($PB -c 'Print :Entitlements:application-identifier' "$1"); echo "${id#*.}"; }
+          groups_of() { $PB -c 'Print :Entitlements:com.apple.security.application-groups' "$1" 2>/dev/null | sed -n 's/^ *\(group\.[^ ]*\)$/\1/p' || true; }
+
+          APP_PLIST=$(install_profile "$BUILD_PROVISION_PROFILE_BASE64" app)
+          APP_UUID=$($PB -c 'Print :UUID' "$APP_PLIST")
+          TEAM_ID=$($PB -c 'Print :TeamIdentifier:0' "$APP_PLIST")
+          APP_PATTERN=$(bundle_of "$APP_PLIST")
+          if [[ "$APP_PATTERN" == *"*" ]]; then
+            PREFIX=${APP_PATTERN%\*}
+            BUNDLE_ID=${FALLBACK_BUNDLE_ID:-${PREFIX}shiftnote}
+            if [ "$BUNDLE_ID" = "shiftnote" ]; then BUNDLE_ID=app.shiftnote; fi
+          else
+            BUNDLE_ID=$APP_PATTERN
+          fi
+          WIDGET_ID="$BUNDLE_ID.widget"
+
+          # ウィジェットのプロファイル（無ければ、ワイルドカードのときだけ本体と同じものを使う）
+          SIGN_OK=true
+          if [ -n "$WIDGET_PROVISION_PROFILE_BASE64" ]; then
+            WIDGET_PLIST=$(install_profile "$WIDGET_PROVISION_PROFILE_BASE64" widget)
+            WIDGET_UUID=$($PB -c 'Print :UUID' "$WIDGET_PLIST")
+            WP=$(bundle_of "$WIDGET_PLIST")
+            if [[ "$WP" != *"*" ]]; then WIDGET_ID=$WP; fi
+          elif [[ "$APP_PATTERN" == *"*" ]]; then
+            WIDGET_PLIST=$APP_PLIST
+            WIDGET_UUID=$APP_UUID
+          else
+            SIGN_OK=false
+            echo "::warning title=署名::プロファイルのバンドルIDが固定（$APP_PATTERN）なので、ウィジェット用のプロファイル（WIDGET_PROVISION_PROFILE_BASE64、バンドルID $BUNDLE_ID.widget）が必要です。署名付き .ipa は作らず、署名なし .ipa だけを出力します。"
+          fi
+
+          # App Group（アプリとウィジェットで設定を共有するのに使う）
+          APP_GROUP=""
+          FIRST_GROUP=$(groups_of "$APP_PLIST" | head -1)
+          if [ -n "$FIRST_GROUP" ]; then
+            if [[ "$FIRST_GROUP" == *"*"* ]]; then APP_GROUP="group.$BUNDLE_ID"; else APP_GROUP=$FIRST_GROUP; fi
+            if [ "$SIGN_OK" = true ] && [ "$WIDGET_PLIST" != "$APP_PLIST" ]; then
+              if ! groups_of "$WIDGET_PLIST" | grep -qxF -e "$APP_GROUP" -e 'group.*'; then
+                echo "::warning title=App Group::ウィジェットのプロファイルに $APP_GROUP がないため、App Group なしで署名します。"
+                APP_GROUP=""
+              fi
+            fi
+          fi
+          if [ -z "$APP_GROUP" ]; then
+            echo "::warning title=App Group::プロファイルに App Group がないため、ウィジェットはアプリの設定を読めません（アプリ本体は使えます）。"
+            for f in ShiftNote/ShiftNote.entitlements ShiftNoteWidget/ShiftNoteWidget.entitlements; do
+              printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict/></plist>\n' > "$f"
+            done
+          fi
+
+          GET_TASK_ALLOW=$($PB -c 'Print :Entitlements:get-task-allow' "$APP_PLIST" 2>/dev/null || echo false)
+          if $PB -c 'Print :ProvisionsAllDevices' "$APP_PLIST" >/dev/null 2>&1; then METHOD=enterprise
+          elif [ "$GET_TASK_ALLOW" = "true" ]; then METHOD=debugging
+          elif $PB -c 'Print :ProvisionedDevices' "$APP_PLIST" >/dev/null 2>&1; then METHOD=release-testing
+          else METHOD=app-store-connect; fi
+
+          SIGN_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk 'NR==1 {print $2}')
+          if [ -z "$SIGN_IDENTITY" ]; then echo "::error::証明書から署名IDを読み取れませんでした。.p12 とパスワードを確認してください。"; exit 1; fi
+
+          echo "::notice title=署名::アプリ=$BUNDLE_ID ウィジェット=$WIDGET_ID App Group=${APP_GROUP:-なし} 書き出し方式=$METHOD 期限=$($PB -c 'Print :ExpirationDate' "$APP_PLIST")"
+
+          write_config() {  # $1=file $2=bundle $3=uuid
+            cat > "$1" <<EOF
+          PRODUCT_BUNDLE_IDENTIFIER = $2
+          APP_GROUP_ID = $APP_GROUP
+          CODE_SIGN_STYLE = Manual
+          DEVELOPMENT_TEAM = $TEAM_ID
+          PROVISIONING_PROFILE_SPECIFIER = $3
+          CODE_SIGN_IDENTITY = $SIGN_IDENTITY
+          OTHER_CODE_SIGN_FLAGS = --keychain $KEYCHAIN_PATH
+          EOF
+          }
+          if [ "$SIGN_OK" = true ]; then
+            write_config Config/App.xcconfig "$BUNDLE_ID" "$APP_UUID"
+            write_config Config/Widget.xcconfig "$WIDGET_ID" "$WIDGET_UUID"
+          fi
+          {
+            echo "SIGN_OK=$SIGN_OK"
+            echo "TEAM_ID=$TEAM_ID"
+            echo "BUNDLE_ID=$BUNDLE_ID"
+            echo "WIDGET_ID=$WIDGET_ID"
+            echo "APP_UUID=$APP_UUID"
+            echo "WIDGET_UUID=${WIDGET_UUID:-}"
+            echo "EXPORT_METHOD=$METHOD"
+            echo "SIGN_IDENTITY=$SIGN_IDENTITY"
+          } >> "$GITHUB_ENV"
+
+      - name: Archive
+        if: env.HAS_SIGNING == 'true' && env.SIGN_OK == 'true'
+        run: |
+          set -o pipefail
+          xcodegen generate
+          xcodebuild archive \
+            -project ShiftNote.xcodeproj \
+            -scheme ShiftNote \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/ShiftNote.xcarchive" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} 2>&1 | tee "$RUNNER_TEMP/archive.log" | xcbeautify --renderer github-actions || {
+            grep -E "error:" "$RUNNER_TEMP/archive.log" | head -40 | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          }
+
+      - name: Export IPA
+        if: env.HAS_SIGNING == 'true' && env.SIGN_OK == 'true'
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>$EXPORT_METHOD</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>$SIGN_IDENTITY</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$BUNDLE_ID</key><string>$APP_UUID</string>
+              <key>$WIDGET_ID</key><string>$WIDGET_UUID</string>
+            </dict>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/ShiftNote.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export"
+          mkdir -p "$RUNNER_TEMP/ipa"
+          cp "$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)" "$RUNNER_TEMP/ipa/ShiftNote-${{ github.run_number }}.ipa"
+
+      - uses: actions/upload-artifact@v7
+        if: env.HAS_SIGNING == 'true' && env.SIGN_OK == 'true'
+        with:
+          path: ${{ runner.temp }}/ipa/ShiftNote-${{ github.run_number }}.ipa
+          archive: false
+          retention-days: 14
+
+      - name: Clean up keychain
+        if: always() && env.HAS_SIGNING == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true

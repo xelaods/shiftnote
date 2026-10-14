@@ -1,0 +1,3 @@
+// ウィジェットの設定。CI で署名するときは、プロファイルに合わせてこのファイルが書き換えられる。
+PRODUCT_BUNDLE_IDENTIFIER = app.shiftnote.widget
+APP_GROUP_ID = group.app.shiftnote
