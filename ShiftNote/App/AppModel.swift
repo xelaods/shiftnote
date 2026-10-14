@@ -33,15 +33,12 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var needsCalendar: Bool { hasAccess && settings.calendarIdentifier == nil }
+    /// カレンダーは選ばなくても（すべてのカレンダーから探すので）使える
+    var needsCalendar: Bool { false }
 
     func requestAccess() async {
         _ = await repository.requestAccess()
         reload()
-        // 初回は「シフト」の予定がいちばん多いカレンダーを自動で選ぶ
-        if settings.calendarIdentifier == nil, let guess = guessCalendar() {
-            settings.calendarIdentifier = guess
-        }
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -55,17 +52,6 @@ final class AppModel: ObservableObject {
             return
         }
         engine = PayEngine(shifts: repository.fetchShifts(settings: settings, now: now), settings: settings)
-    }
-
-    private func guessCalendar() -> String? {
-        var best: (String, Int)?
-        for c in calendars {
-            var s = settings
-            s.calendarIdentifier = c.calendarIdentifier
-            let count = repository.fetchShifts(settings: s, now: now).count
-            if count > (best?.1 ?? 0) { best = (c.calendarIdentifier, count) }
-        }
-        return best?.0
     }
 
     func calendar(for id: String?) -> EKCalendar? {

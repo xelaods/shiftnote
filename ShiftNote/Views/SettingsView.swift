@@ -10,7 +10,7 @@ struct SettingsView: View {
                 Section {
                     if model.hasAccess {
                         Picker("カレンダー", selection: $model.settings.calendarIdentifier) {
-                            Text("選択してください").tag(String?.none)
+                            Text("すべてのカレンダー").tag(String?.none)
                             ForEach(model.calendars, id: \.calendarIdentifier) { c in
                                 Text(c.title).tag(Optional(c.calendarIdentifier))
                             }
@@ -27,7 +27,7 @@ struct SettingsView: View {
                 } header: {
                     Text("シフトの読み込み")
                 } footer: {
-                    Text("このカレンダーにある、この名前の予定をシフトとして計算します。")
+                    Text("この名前の予定をシフトとして計算します。同じ時間の予定が複数のカレンダーにあっても1回として数えます。")
                 }
 
                 Section("時給") {
@@ -78,7 +78,6 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    LabeledContent("設定の共有", value: SharedStore.isShared ? "オン" : "オフ")
                     Button("ウィジェットを更新") {
                         WidgetCenter.shared.reloadAllTimelines()
                     }
@@ -86,9 +85,9 @@ struct SettingsView: View {
                     Text("ウィジェット")
                 } footer: {
                     if SharedStore.isShared {
-                        Text("ホーム画面やロック画面に「次のシフト」「今月の給与」「年収」「シフトカレンダー」を追加できます。")
+                        Text("ホーム画面やロック画面に「次のシフト」「今月の給与」「年収と年収の壁」「シフトカレンダー」を追加できます。ウィジェットはこの画面の設定を使います。")
                     } else {
-                        Text("署名に App Group が含まれていないため、ウィジェットがこの設定を読めません。App Group 付きのプロファイルで署名すると使えるようになります。")
+                        Text("ウィジェットはアプリと保存場所が別なので、時給などはウィジェットを長押し →「ウィジェットを編集」でも入力してください。シフトはすべてのカレンダーから「シフト」の予定を探します。")
                     }
                 }
             }

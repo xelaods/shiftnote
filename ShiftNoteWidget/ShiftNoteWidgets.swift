@@ -27,29 +27,23 @@ func nextRefresh(after now: Date, state: LoadState) -> Date {
     return candidates.filter { $0 > now }.min() ?? now.addingTimeInterval(1800)
 }
 
-struct PayProvider: TimelineProvider {
+struct PayProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> PayEntry {
         PayEntry(date: Date(), state: .ready(Sample.engine()))
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (PayEntry) -> Void) {
-        if context.isPreview {
-            completion(placeholder(in: context))
-            return
-        }
+    func snapshot(for configuration: PayWidgetIntent, in context: Context) async -> PayEntry {
         let now = Date()
-        let state = DataLoader.load(now: now)
-        if case .message = state {
-            completion(PayEntry(date: now, state: .ready(Sample.engine(now: now))))
-        } else {
-            completion(PayEntry(date: now, state: state))
-        }
+        if context.isPreview { return PayEntry(date: now, state: .ready(Sample.engine(now: now))) }
+        let state = DataLoader.load(now: now, widgetSettings: configuration.settings)
+        if case .message = state { return PayEntry(date: now, state: .ready(Sample.engine(now: now))) }
+        return PayEntry(date: now, state: state)
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<PayEntry>) -> Void) {
+    func timeline(for configuration: PayWidgetIntent, in context: Context) async -> Timeline<PayEntry> {
         let now = Date()
-        let state = DataLoader.load(now: now)
-        completion(Timeline(entries: [PayEntry(date: now, state: state)], policy: .after(nextRefresh(after: now, state: state))))
+        let state = DataLoader.load(now: now, widgetSettings: configuration.settings)
+        return Timeline(entries: [PayEntry(date: now, state: state)], policy: .after(nextRefresh(after: now, state: state)))
     }
 }
 

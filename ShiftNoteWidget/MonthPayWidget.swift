@@ -3,7 +3,7 @@ import SwiftUI
 
 struct MonthPayWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "MonthPay", provider: PayProvider()) { entry in
+        AppIntentConfiguration(kind: "MonthPay", intent: PayWidgetIntent.self, provider: PayProvider()) { entry in
             MonthPayView(entry: entry).widgetBackground()
         }
         .configurationDisplayName("今月の給与")

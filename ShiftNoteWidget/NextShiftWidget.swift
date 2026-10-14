@@ -3,7 +3,7 @@ import SwiftUI
 
 struct NextShiftWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "NextShift", provider: PayProvider()) { entry in
+        AppIntentConfiguration(kind: "NextShift", intent: PayWidgetIntent.self, provider: PayProvider()) { entry in
             NextShiftView(entry: entry).widgetBackground()
         }
         .configurationDisplayName("次のシフト")

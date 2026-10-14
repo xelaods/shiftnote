@@ -24,29 +24,23 @@ Scriptable版（Shift Note・Shift Pay）をネイティブアプリにしたも
 給与の計算式は Scriptable 版と同じです（1分ごとに曜日別の時給と22時〜5時の深夜割増を足し、休憩は勤務時間全体から按分）。
 シフトの予定は shifcon-sync（Scriptable）がカレンダーに書き込んだものをそのまま使います。
 
-## ビルド（GitHub Actions）
+## IPA の作り方（Mac 不要）
 
-`main` に push すると `.github/workflows/ios.yml` が動きます。
+`main` に push すると、GitHub Actions（`.github/workflows/ios.yml`）が自動でビルドします。手動で動かすときは **Actions** タブ →「iOS Build」→「Run workflow」。
 
-1. XcodeGen で Xcode プロジェクトを作る
-2. シミュレーターでユニットテスト（給与計算が Scriptable 版と同じ金額になるか）
-3. **署名なしの .ipa** を Artifacts に保存（ESign・Feather・Sideloadly などで自分で署名する用）
-4. 署名用の Secrets があれば、**署名付きの .ipa** も Artifacts に保存
+1. 完了した実行を開き、下の **Artifacts** から `ShiftNote-unsigned-番号.ipa` をダウンロード
+2. 普段使っている署名ツールで署名してインストール
 
-### Secrets（Settings → Secrets and variables → Actions）
+ビルドの途中で、給与の計算が Scriptable 版と同じ金額になるかのテストも行います。
 
-GymPilot と同じものが使えます。
+## 初期設定
 
-| 名前 | 必須 | 内容 |
-|---|---|---|
-| `BUILD_CERTIFICATE_BASE64` | ○ | 署名証明書（.p12）を Base64 にした文字列 |
-| `P12_PASSWORD` | ○ | .p12 のパスワード |
-| `BUILD_PROVISION_PROFILE_BASE64` | ○ | プロファイル（.mobileprovision）を Base64 にした文字列 |
-| `WIDGET_PROVISION_PROFILE_BASE64` | | プロファイルのバンドルIDが固定のときだけ必要。ウィジェット用（`<アプリのバンドルID>.widget`）のプロファイル |
-| `BUNDLE_ID` | | プロファイルがワイルドカード（`*`）のときのバンドルID。省略すると `app.shiftnote` |
+1. アプリを開いて、カレンダーへのアクセスを許可
+2. 「設定」タブで時給・深夜割増・交通費・休憩・締め日を入力（読み込むカレンダーは「すべてのカレンダー」のままで大丈夫）
+3. ホーム画面・ロック画面にウィジェットを追加
+4. ウィジェットを長押し →「ウィジェットを編集」で、アプリと同じ時給などを入力
 
-- プロファイルがワイルドカードなら、アプリとウィジェットを同じプロファイルで署名します。
-- プロファイルに **App Group** が入っていれば、アプリの設定（カレンダー・時給など）をウィジェットと共有します。入っていない場合、アプリは使えますが、ウィジェットは「設定を共有できません」と表示します。ビルドのログ（Annotations）に、使った App Group が表示されます。
+ウィジェットとアプリは保存場所が別なので、時給などは両方に入力が必要です（attend と同じです）。
 
 ## 構成
 

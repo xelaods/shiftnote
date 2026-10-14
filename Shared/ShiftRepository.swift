@@ -33,12 +33,19 @@ final class ShiftRepository {
     }
 
     func fetchShifts(settings: AppSettings, now: Date = Date()) -> [Shift] {
-        guard Self.hasAccess,
-              let id = settings.calendarIdentifier,
-              let calendar = store.calendar(withIdentifier: id) else { return [] }
+        guard Self.hasAccess else { return [] }
+        // カレンダーを選んでいなければ、すべてのカレンダーから探す
+        let targets: [EKCalendar]
+        if let id = settings.calendarIdentifier {
+            guard let calendar = store.calendar(withIdentifier: id) else { return [] }
+            targets = [calendar]
+        } else {
+            targets = store.calendars(for: .event)
+        }
+        guard !targets.isEmpty else { return [] }
         let (from, to) = Self.range(now: now)
         let title = settings.eventTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let predicate = store.predicateForEvents(withStart: from, end: to, calendars: [calendar])
+        let predicate = store.predicateForEvents(withStart: from, end: to, calendars: targets)
         var seen = Set<String>()
         var shifts: [Shift] = []
         for event in store.events(matching: predicate) {
@@ -61,16 +68,13 @@ enum LoadState {
 
 /// ウィジェット用：カレンダーと設定を読んで計算する
 enum DataLoader {
-    static func load(now: Date = Date()) -> LoadState {
+    /// - Parameter widgetSettings: ウィジェットの編集画面で入れた時給など。
+    ///   アプリと設定を共有できる（App Group が使える）ときはアプリの設定を優先する。
+    static func load(now: Date = Date(), widgetSettings: AppSettings) -> LoadState {
         guard ShiftRepository.hasAccess else {
             return .message("Shift Noteを開いて、カレンダーへのアクセスを許可してください")
         }
-        let settings = SharedStore.loadSettings()
-        guard settings.calendarIdentifier != nil else {
-            return .message(SharedStore.isShared
-                ? "Shift Noteの設定で、シフトのカレンダーを選んでください"
-                : "アプリと設定を共有できません（App Groupが署名に含まれていません）")
-        }
+        let settings = SharedStore.isShared ? SharedStore.loadSettings() : widgetSettings
         let shifts = ShiftRepository().fetchShifts(settings: settings, now: now)
         return .ready(PayEngine(shifts: shifts, settings: settings))
     }

@@ -4,7 +4,7 @@ import Charts
 
 struct IncomeWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "Income", provider: PayProvider()) { entry in
+        AppIntentConfiguration(kind: "Income", intent: PayWidgetIntent.self, provider: PayProvider()) { entry in
             IncomeWidgetView(entry: entry).widgetBackground()
         }
         .configurationDisplayName("年収と年収の壁")
