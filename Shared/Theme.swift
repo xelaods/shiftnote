@@ -17,6 +17,8 @@ enum Theme {
     static let positive = dynamic(light: 0x1E9157, dark: 0x3DBB78)
     static let warning = dynamic(light: 0xD98A0B, dark: 0xF2B53C)
     static let negative = dynamic(light: 0xD7263D, dark: 0xF0485A)
+    /// 時間帯の色の上に載せる文字
+    static let onBand = dynamic(light: 0xFFFFFF, dark: 0x0E0F11)
     static let sunday = dynamic(light: 0xD7263D, dark: 0xF0606E)
     static let saturday = dynamic(light: 0x2F64D6, dark: 0x6C95F2)
 

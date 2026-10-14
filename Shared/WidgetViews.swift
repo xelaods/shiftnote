@@ -521,7 +521,7 @@ struct WidgetDayCell: View {
         case .mini:
             Text(Fmt.time(item.start))
                 .font(Theme.number(10, weight: .heavy))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.onBand)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .frame(maxWidth: .infinity, minHeight: 14)
@@ -541,7 +541,7 @@ struct WidgetDayCell: View {
                         .padding(.top, 1)
                 }
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(Theme.onBand)
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.6)

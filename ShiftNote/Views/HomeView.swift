@@ -74,10 +74,9 @@ private struct NextShiftHero: View {
                 Circle()
                     .fill(item.band.color)
                     .frame(width: 8, height: 8)
-                    .overlay {
+                    .background {
                         if working {
-                            Circle().stroke(item.band.color.opacity(0.4), lineWidth: 6)
-                                .scaleEffect(1.6)
+                            Circle().fill(item.band.color.opacity(0.25)).frame(width: 16, height: 16)
                         }
                     }
                 Text(working ? "勤務中" : "次のシフト")
@@ -146,13 +145,14 @@ private struct NextShiftHero: View {
                 }
             }
         }
-        .card(padding: 20)
+        .padding(.leading, 6)
         .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2)
+            Capsule()
                 .fill(item.band.color)
                 .frame(width: 4)
-                .padding(.vertical, 22)
+                .padding(.vertical, 6)
         }
+        .card(padding: 20)
     }
 
     /// 2日 4時間 / 3時間12分 / 8分
@@ -223,7 +223,7 @@ private struct DayColumn: View {
                             .font(Theme.number(11, weight: .semibold))
                             .opacity(0.75)
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onBand)
                     .frame(maxWidth: .infinity, minHeight: 50)
                     .background(item.band.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 } else {

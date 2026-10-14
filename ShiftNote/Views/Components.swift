@@ -10,7 +10,7 @@ struct ShiftChip: View {
         HStack(spacing: 6) {
             Text(item.band.label)
                 .font(.system(size: 11, weight: .heavy))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.onBand)
                 .frame(width: 20, height: 20)
                 .background(item.band.color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             Text("\(Fmt.time(item.start))–\(Fmt.time(item.end))")
@@ -58,7 +58,7 @@ struct TimeBar: View {
             .frame(height: height)
             HStack {
                 ForEach(Array(stride(from: 0, through: Int(maxH), by: 6)), id: \.self) { h in
-                    Text("\(h % 24)")
+                    Text("\(h == 24 ? 24 : h % 24)")
                         .font(.system(size: 10, weight: .semibold).width(.condensed))
                         .foregroundStyle(Theme.faint)
                     if h + 6 <= Int(maxH) { Spacer(minLength: 0) }

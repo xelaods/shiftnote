@@ -227,7 +227,7 @@ private struct MonthGrid: View {
                 if let item {
                     Text(Fmt.time(item.start))
                         .font(Theme.number(11, weight: .heavy))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onBand)
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
