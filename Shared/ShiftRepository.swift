@@ -74,8 +74,17 @@ enum DataLoader {
         guard ShiftRepository.hasAccess else {
             return .message("Shift Noteを開いて、カレンダーへのアクセスを許可してください")
         }
-        let settings = SharedStore.isShared ? SharedStore.loadSettings() : widgetSettings
-        let shifts = ShiftRepository().fetchShifts(settings: settings, now: now)
+        // 1. App Group（使える署名のとき） 2. カレンダーに保存した設定 3. ウィジェットの編集画面の値
+        let repository = ShiftRepository()
+        let settings: AppSettings
+        if SharedStore.isShared {
+            settings = SharedStore.loadSettings()
+        } else if let synced = CalendarSettingsStore.read(store: repository.store) {
+            settings = synced
+        } else {
+            settings = widgetSettings
+        }
+        let shifts = repository.fetchShifts(settings: settings, now: now)
         return .ready(PayEngine(shifts: shifts, settings: settings))
     }
 }

@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import AppIntents
 
 @main
 struct ShiftNoteWidgets: WidgetBundle {
@@ -11,7 +12,7 @@ struct ShiftNoteWidgets: WidgetBundle {
     }
 }
 
-// MARK: - 共通
+// MARK: - データ
 
 struct PayEntry: TimelineEntry {
     let date: Date
@@ -49,77 +50,112 @@ struct PayProvider: AppIntentTimelineProvider {
 
 extension View {
     func widgetBackground() -> some View {
-        containerBackground(for: .widget) {
-            Color(uiColor: .systemBackground)
-        }
+        containerBackground(for: .widget) { Theme.card }
     }
 }
 
-struct MessageView: View {
-    let text: String
+/// 状態に応じて中身かメッセージを出す
+struct EntryView<Content: View>: View {
+    let state: LoadState
+    @ViewBuilder let content: (PayEngine, WidgetFamily) -> Content
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
-        switch family {
-        case .accessoryInline:
-            Text("Shift Note：設定が必要です")
-        case .accessoryRectangular, .accessoryCircular:
-            VStack(alignment: .leading) {
-                Text("Shift Note").font(.headline)
-                Text("アプリで設定してください").font(.caption)
-            }
-        default:
-            VStack(alignment: .leading, spacing: 6) {
-                Image(systemName: "calendar.badge.exclamationmark")
-                    .font(.title2)
-                    .foregroundStyle(.tint)
-                Text("Shift Note")
-                    .font(.headline)
-                Text(text)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        switch state {
+        case .message(let text): WidgetMessageView(text: text, family: family)
+        case .ready(let engine): content(engine, family)
         }
     }
 }
 
-struct WidgetTitle: View {
-    let text: String
-    var trailing: String? = nil
+// MARK: - ウィジェット
 
-    var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(text)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tint)
-            Spacer(minLength: 4)
-            if let trailing {
-                Text(trailing)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+struct NextShiftWidget: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: "NextShift", intent: PayWidgetIntent.self, provider: PayProvider()) { entry in
+            EntryView(state: entry.state) { engine, family in
+                NextShiftWidgetView(engine: engine, now: entry.date, family: family)
             }
+            .widgetBackground()
+            .widgetURL(URL(string: "shiftnote://home"))
         }
-        .lineLimit(1)
+        .configurationDisplayName("次のシフト")
+        .description("次のシフトの時間と給与。勤務中は終わりまでの残り時間を表示します。")
+        .supportedFamilies([.systemSmall, .accessoryRectangular, .accessoryInline])
     }
 }
 
-struct StatColumn: View {
-    let title: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.subheadline.weight(.semibold))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+struct MonthPayWidget: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: "MonthPay", intent: PayWidgetIntent.self, provider: PayProvider()) { entry in
+            EntryView(state: entry.state) { engine, family in
+                MonthPayWidgetView(engine: engine, now: entry.date, family: family)
+            }
+            .widgetBackground()
+            .widgetURL(URL(string: "shiftnote://home"))
         }
+        .configurationDisplayName("今月の給与")
+        .description("今月の予想給与と勤務時間を表示します。")
+        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryInline])
+    }
+}
+
+struct IncomeWidget: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: "Income", intent: PayWidgetIntent.self, provider: PayProvider()) { entry in
+            EntryView(state: entry.state) { engine, family in
+                IncomeWidgetView(engine: engine, now: entry.date, family: family)
+            }
+            .widgetBackground()
+            .widgetURL(URL(string: "shiftnote://income"))
+        }
+        .configurationDisplayName("年収と年収の壁")
+        .description("今年の年収の見込みと、年収の壁までの残りを表示します。")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular, .accessoryInline])
+    }
+}
+
+// MARK: - シフトカレンダー
+
+struct CalendarEntry: TimelineEntry {
+    let date: Date
+    let state: LoadState
+    let span: CalendarSpanKind
+}
+
+struct CalendarProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> CalendarEntry {
+        CalendarEntry(date: Date(), state: .ready(Sample.engine()), span: .weekCentered)
+    }
+
+    func snapshot(for configuration: ShiftCalendarIntent, in context: Context) async -> CalendarEntry {
+        let now = Date()
+        let span = configuration.span.kind
+        if context.isPreview { return CalendarEntry(date: now, state: .ready(Sample.engine(now: now)), span: span) }
+        let state = DataLoader.load(now: now, widgetSettings: configuration.calendarSettings)
+        if case .message = state { return CalendarEntry(date: now, state: .ready(Sample.engine(now: now)), span: span) }
+        return CalendarEntry(date: now, state: state, span: span)
+    }
+
+    func timeline(for configuration: ShiftCalendarIntent, in context: Context) async -> Timeline<CalendarEntry> {
+        let now = Date()
+        let state = DataLoader.load(now: now, widgetSettings: configuration.calendarSettings)
+        return Timeline(entries: [CalendarEntry(date: now, state: state, span: configuration.span.kind)],
+                        policy: .after(nextRefresh(after: now, state: state)))
+    }
+}
+
+struct ShiftCalendarWidget: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: "ShiftCalendar", intent: ShiftCalendarIntent.self, provider: CalendarProvider()) { entry in
+            EntryView(state: entry.state) { engine, family in
+                CalendarWidgetView(engine: engine, now: entry.date, family: family, span: entry.span)
+            }
+            .widgetBackground()
+            .widgetURL(URL(string: "shiftnote://calendar"))
+        }
+        .configurationDisplayName("シフトカレンダー")
+        .description("シフトをカレンダーで表示します。長押しして「ウィジェットを編集」で期間を変えられます。")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }

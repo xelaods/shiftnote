@@ -48,6 +48,8 @@ struct AppSettings: Codable, Equatable {
     /// 支給月（0 = 当月, 1 = 翌月, 2 = 翌々月）
     var payOffset: Int = 1
     var weekStart: WeekStart = .sunday
+    /// App Group が使えないとき、設定をカレンダー（2001年1月1日の予定）に保存してウィジェットと共有する
+    var syncViaCalendar: Bool = true
 
     init() {}
 
@@ -60,6 +62,7 @@ struct AppSettings: Codable, Equatable {
         closingDay = try c.decodeIfPresent(Int.self, forKey: .closingDay) ?? d.closingDay
         payOffset = try c.decodeIfPresent(Int.self, forKey: .payOffset) ?? d.payOffset
         weekStart = try c.decodeIfPresent(WeekStart.self, forKey: .weekStart) ?? d.weekStart
+        syncViaCalendar = try c.decodeIfPresent(Bool.self, forKey: .syncViaCalendar) ?? d.syncViaCalendar
     }
 }
 

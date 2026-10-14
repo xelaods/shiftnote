@@ -14,6 +14,8 @@ jobs:
   build:
     runs-on: macos-26
     timeout-minutes: 60
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v5
@@ -41,6 +43,36 @@ jobs:
             grep -E "error:|Test Case .* failed|XCTAssert" "$RUNNER_TEMP/test.log" | head -40 | while IFS= read -r line; do echo "::error::$line"; done
             exit 1
           }
+
+      # 見本のシフトで各画面を撮影し、ci-screenshots ブランチに置く（見た目の確認用）
+      - name: Screenshots
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        run: |
+          set -x
+          UDID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for k,v in sorted(d.items(), reverse=True) if "iOS" in k for x in v if x["name"].startswith("iPhone") and "Pro" in x["name"] and "Max" not in x["name"]))')
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcodebuild build -project ShiftNote.xcodeproj -scheme ShiftNote -destination "id=$UDID" \
+            -derivedDataPath "$RUNNER_TEMP/sim" CODE_SIGNING_ALLOWED=NO -quiet
+          xcrun simctl install "$UDID" "$RUNNER_TEMP/sim/Build/Products/Debug-iphonesimulator/ShiftNote.app"
+          xcrun simctl status_bar "$UDID" override --time 9:41 --batteryLevel 100 --cellularBars 4 || true
+          mkdir -p "$RUNNER_TEMP/shots"
+          for mode in light dark; do
+            xcrun simctl ui "$UDID" appearance $mode
+            for spec in "1-home|-tab home" "2-calendar|-tab calendar" "3-income|-tab income" "4-settings|-tab settings" "5-day|-day" "6-widgets|-gallery"; do
+              name=${spec%%|*}; args=${spec#*|}
+              xcrun simctl terminate "$UDID" app.shiftnote || true
+              xcrun simctl launch "$UDID" app.shiftnote -demo $args
+              sleep 5
+              xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/$name-$mode.png"
+            done
+          done
+          cd "$RUNNER_TEMP/shots"
+          git init -q && git checkout -q -b ci-screenshots
+          git -c user.name="github-actions" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add .
+          git -c user.name="github-actions" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "Screenshots for ${{ github.sha }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-screenshots
 
       # 署名なしの .ipa（いつもの署名ツールで署名してインストールする）
       - name: Build unsigned IPA
