@@ -145,7 +145,7 @@ private struct NextShiftHero: View {
                 }
             }
         }
-        .padding(.leading, 6)
+        .padding(.leading, 14)
         .overlay(alignment: .leading) {
             Capsule()
                 .fill(item.band.color)
