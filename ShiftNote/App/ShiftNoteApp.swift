@@ -3,11 +3,13 @@ import SwiftUI
 @main
 struct ShiftNoteApp: App {
     @StateObject private var model = AppModel()
+    @StateObject private var shifcon = ShifconClient()
 
     var body: some Scene {
         WindowGroup {
             AppRoot()
                 .environmentObject(model)
+                .environmentObject(shifcon)
         }
     }
 }
@@ -53,9 +55,9 @@ struct AppRoot: View {
     }
 }
 
-/// 下のタブ：ホーム・カレンダー・年収・設定
+/// 下のタブ：ホーム・カレンダー・申請・年収・設定
 struct MainTabView: View {
-    enum Tab: Hashable { case home, calendar, income, settings }
+    enum Tab: Hashable { case home, calendar, request, income, settings }
 
     @EnvironmentObject var model: AppModel
     @State private var tab: Tab = MainTabView.initialTab
@@ -66,6 +68,7 @@ struct MainTabView: View {
         guard let i = args.firstIndex(of: "-tab"), i + 1 < args.count else { return .home }
         switch args[i + 1] {
         case "calendar": return .calendar
+        case "request": return .request
         case "income": return .income
         case "settings": return .settings
         default: return .home
@@ -80,6 +83,9 @@ struct MainTabView: View {
             CalendarScreen(openDay: { sheetDay = $0 })
                 .tabItem { Label("カレンダー", systemImage: "calendar") }
                 .tag(Tab.calendar)
+            RequestScreen()
+                .tabItem { Label("申請", systemImage: "paperplane") }
+                .tag(Tab.request)
             IncomeScreen()
                 .tabItem { Label("年収", systemImage: "chart.bar.xaxis") }
                 .tag(Tab.income)
@@ -93,12 +99,13 @@ struct MainTabView: View {
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(28)
         }
-        // ウィジェットから開いたとき（shiftnote://calendar・shiftnote://income・shiftnote://day/20261014）
+        // ウィジェットから開いたとき（shiftnote://calendar・shiftnote://request・shiftnote://income・shiftnote://day/20261014）
         .onOpenURL { url in
             guard url.scheme == "shiftnote" else { return }
             withAnimation(Motion.cinematicFast) {
                 switch url.host {
                 case "calendar": tab = .calendar
+                case "request": tab = .request
                 case "income": tab = .income
                 case "settings": tab = .settings
                 case "day":
