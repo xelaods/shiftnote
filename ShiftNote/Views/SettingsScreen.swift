@@ -3,7 +3,10 @@ import WidgetKit
 
 struct SettingsScreen: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var shifcon: ShifconClient
     @AppStorage("appearance") private var appearance = Appearance.system.rawValue
+    @AppStorage(ShifconClient.autoLoginKey) private var shifconAutoLogin = true
+    @State private var confirmLogout = false
 
     var body: some View {
         NavigationStack {
@@ -77,6 +80,17 @@ struct SettingsScreen: View {
                 }
 
                 Section {
+                    Toggle("ログイン情報を保存して自動ログイン", isOn: $shifconAutoLogin)
+                    Button("シフコンからログアウト", role: .destructive) {
+                        confirmLogout = true
+                    }
+                } header: {
+                    Text("シフト申請（シフコン）")
+                } footer: {
+                    Text("「申請」タブでシフコンにログインした情報と Cookie を、この iPhone のキーチェーンに保存します。ログアウトすると両方とも消えます。")
+                }
+
+                Section {
                     if model.widgetsShareSettings {
                         LabeledContent("設定の共有", value: "App Group")
                     } else {
@@ -119,6 +133,17 @@ struct SettingsScreen: View {
             .background(Theme.paper)
             .navigationTitle("設定")
             .scrollDismissesKeyboard(.interactively)
+            .onChange(of: shifconAutoLogin) { _, on in
+                if !on { Keychain.set(Data?.none, for: "login") }
+            }
+            .confirmationDialog("シフコンからログアウトしますか？", isPresented: $confirmLogout, titleVisibility: .visible) {
+                Button("ログアウト", role: .destructive) {
+                    Task { await shifcon.forgetLogin() }
+                }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("保存したログイン情報と Cookie を消します。")
+            }
         }
     }
 
