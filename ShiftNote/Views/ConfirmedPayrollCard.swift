@@ -4,6 +4,7 @@ import SwiftUI
 struct ConfirmedPayrollCard: View {
     @EnvironmentObject var model: AppModel
     let year: Int
+    @State private var showCompanyPortal = false
 
     private var records: [CompanyPayrollRecord] {
         model.confirmedPayroll.filter { $0.paymentYear == year }
@@ -21,8 +22,17 @@ struct ConfirmedPayrollCard: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.muted)
             }
+            Button {
+                showCompanyPortal = true
+            } label: {
+                Label("COMPANYで給与明細を確認", systemImage: "arrow.up.right.square")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .sheet(isPresented: $showCompanyPortal) {
+                CompanyPortalSheet()
+            }
             if records.isEmpty {
-                Text("COMPANYの給与明細はまだ取得できていません。以下の年収・給与はシフトから計算した見込み額です。")
+                Text("COMPANYの自動取得は未接続です。上のボタンから本人のログインで明細を確認できます。以下の年収・給与はシフトから計算した見込み額です。")
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.muted)
                     .fixedSize(horizontal: false, vertical: true)
