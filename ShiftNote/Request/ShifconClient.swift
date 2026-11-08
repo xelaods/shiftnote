@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import WebKit
+import EventKit
 
 /// シフコンとのやり取り。
 /// 画面には出さない WKWebView でシフコンの従業員ページを開き、フォームの値を読み書きする
@@ -35,6 +36,7 @@ final class ShifconClient: NSObject, ObservableObject {
     private var pendingLogin: [String: String]?
     private var cookiesRestored = false
     private var lastLoaded: Date?
+    private let calendarStore = EKEventStore()
 
     var isDemo: Bool { AppModel.isDemo }
     var hasSavedLogin: Bool { Keychain.data("login") != nil }
@@ -257,6 +259,7 @@ final class ShifconClient: NSObject, ObservableObject {
             }
             pendingLogin = nil
             await saveCookies()
+            await syncCalendar(for: p)
             return
         }
 
@@ -275,6 +278,41 @@ final class ShifconClient: NSObject, ObservableObject {
         }
         phase = .needsLogin
         showLogin = true
+    }
+
+    /// シフコンで読み込んだ今日から5日分を、Shift Note専用カレンダーへ反映する
+    private func syncCalendar(for period: RequestPeriod) async {
+        guard !isDemo else { return }
+        let syncDate = Date()
+        guard let shifts = ShifconCalendarSnapshot.make(from: period, now: syncDate) else {
+            notice = Notice(text: "今日から5日分のシフトを完全に読み込めなかったため、カレンダーは変更しませんでした。", isError: true)
+            return
+        }
+
+        switch EKEventStore.authorizationStatus(for: .event) {
+        case .fullAccess:
+            break
+        case .notDetermined, .writeOnly:
+            guard (try? await calendarStore.requestFullAccessToEvents()) == true else {
+                notice = Notice(text: "カレンダーへのアクセスが許可されていないため、シフトを同期できませんでした。", isError: true)
+                return
+            }
+        default:
+            notice = Notice(text: "設定アプリでShift Noteにカレンダーのフルアクセスを許可すると、自動同期できます。", isError: true)
+            return
+        }
+
+        do {
+            let result = try ShifconCalendarWriter(store: calendarStore).reconcile(
+                shifts, completeSnapshot: true, eventTitle: "シフト", now: syncDate
+            )
+            let changed = result.created + result.updated + result.removed
+            if changed > 0 {
+                notice = Notice(text: "シフトをカレンダーに同期しました（追加 \(result.created)・更新 \(result.updated)・削除 \(result.removed)件）。")
+            }
+        } catch {
+            notice = Notice(text: "カレンダーへの自動同期に失敗しました。シフコンのシフト画面を再読み込みしてください。", isError: true)
+        }
     }
 
     fileprivate func received(login json: String) {

@@ -1,25 +1,17 @@
-# Native synchronization contract
+# Native synchronization
 
-This branch adds a native EventKit writer and a separate verified COMPANY payslip store.
+## Shifcon calendar sync
 
-- ConfirmedShiftCalendarWriter reconciles a complete, verified five-day roster.
-- Only Shift Note-owned events are changed; incomplete downloads cannot delete shifts.
-- CompanyPayrollStore stores exact payslip records in the device Keychain.
-- The income view distinguishes verified COMPANY payslips from estimated shift earnings.
+When the current Shifcon request screen finishes loading or refreshing, Shift Note reads its loaded form values and reconciles shifts for today through the next four dates in Japan time (five dates total).
 
-## Source verification
+- Each of the five dates must be present exactly once, and every work entry must have valid start/end times. An incomplete or invalid read does not change existing calendar events.
+- Work events are written to the app-owned **Shift Note** calendar. Only events marked as Shift Note-managed are updated or removed; unrelated calendar events are left alone.
+- The read occurs as part of the existing Shifcon request-screen flow. It does not claim to retrieve an employer-confirmed roster or promise a timed background refresh.
 
-The current Shifcon integration reads the staffpage shift request form. Its fields include request/edit flags and submitted or editable values; the inspected app code does not establish that these values are the employer's confirmed roster. Do not treat them as confirmed shifts.
+## COMPANY payroll
 
-The COMPANY portal flow was inspected in the authenticated browser:
+The verified-payslip Keychain store and income-card separation are in place, so shift-based estimates remain separate from confirmed payroll. Automatic COMPANY retrieval is not connected yet: the portal's month detail page offers a password-protected PDF save flow, and the PDF fields and a reliable local extraction mapping have not been verified. Failed or incomplete retrieval must never be saved or displayed as confirmed pay.
 
-1. Open **照会 → 給与情報照会 → 給与明細**.
-2. The newest available month is linked directly; older items are behind **一覧表示**.
-3. A month detail page offers **PDF表示／保存**. It does not expose payroll amounts as readable page text.
-4. Continuing to **PDF保存** requires entering and confirming a PDF open password before the file can be saved.
+## Privacy and refresh limits
 
-The PDF's field layout and a reliable way to extract its payroll values have not been verified. The portal flow therefore does not yet provide an automatic, validated payroll source. Never show shift-based estimates as confirmed payroll.
-
-## Refresh limits
-
-iOS does not guarantee timed background WKWebView execution. Any authenticated source adapter must refresh on foreground activation, preserve credentials only on device, validate the complete source response before replacing records, and keep verified payroll separate from estimates. Do not commit payroll records, PDF files, passwords, or session cookies to GitHub.
+Credentials, session cookies, PDF passwords, and payroll records must remain on the device and must not be committed to GitHub. iOS does not guarantee timed background WKWebView execution; the current automatic refresh point is a successful foreground load/refresh of the Shifcon request screen.

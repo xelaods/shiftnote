@@ -91,6 +91,69 @@ final class ShiftRequestTests: XCTestCase {
         XCTAssertEqual(ShiftRequestLogic.unreflectedDays(sent: sent, reloaded: reloaded), [])
     }
 
+    private func calendarDay(_ index: Int, _ date: DayKey, _ fields: RequestFields,
+                              original: RequestFields? = nil) -> RequestDay {
+        RequestDay(index: index, date: date, isPublicHoliday: false, editable: true,
+                   fields: fields, loaded: fields, original: original ?? fields, originalUpdateFlag: "0",
+                   initialYesterdayTo: "", initialTomorrowFrom: "", suggestions: [])
+    }
+
+    private func calendarPeriod(_ days: [RequestDay]) -> RequestPeriod {
+        RequestPeriod(from: days.first!.date, to: days.last!.date, staffName: "", storeName: "",
+                      deadline: nil, infos: [], days: days, canGoBack: false, canGoNext: false,
+                      canCopy: false, isOpen: true, statusText: nil, applyTitle: nil,
+                      serverCanApply: false, messages: [])
+    }
+
+    func testCalendarSnapshotUsesLoadedFiveDatesIncludingOvernightShift() throws {
+        let today = DayKey(year: 2026, month: 11, day: 8)
+        let days = (0..<5).map { offset -> RequestDay in
+            let date = today.adding(days: offset)
+            if offset == 2 { return calendarDay(offset, date, .dayOff) }
+            if offset == 4 {
+                return calendarDay(offset, date, work(26, 32), original: work(18, 26))
+            }
+            return calendarDay(offset, date, work(10, 23))
+        }
+
+        let shifts = try XCTUnwrap(ShifconCalendarSnapshot.make(
+            from: calendarPeriod(days), now: today.date.addingTimeInterval(12 * 60 * 60)
+        ))
+        XCTAssertEqual(shifts.count, 4)
+        XCTAssertEqual(shifts[0].sourceID, "date-20261108")
+        XCTAssertEqual(shifts[0].start, today.date.addingTimeInterval(10 * 60 * 60))
+        XCTAssertEqual(shifts[0].end, today.date.addingTimeInterval(23 * 60 * 60))
+        XCTAssertEqual(shifts[3].sourceID, "date-20261112")
+        XCTAssertEqual(shifts[3].start, today.adding(days: 5).date.addingTimeInterval(2 * 60 * 60))
+        XCTAssertEqual(shifts[3].end, today.adding(days: 5).date.addingTimeInterval(8 * 60 * 60))
+    }
+
+    func testCalendarSnapshotRejectsIncompleteOrInvalidData() {
+        let today = DayKey(year: 2026, month: 11, day: 8)
+        let fourDays = (0..<4).map { i in calendarDay(i, today.adding(days: i), work(10, 23)) }
+        XCTAssertNil(ShifconCalendarSnapshot.make(from: calendarPeriod(fourDays), now: today.date))
+
+        var days = (0..<5).map { i in calendarDay(i, today.adding(days: i), work(10, 23)) }
+        var invalid = RequestFields(shiftType: "1", fromHour: "", fromMinute: "",
+                                    toHour: "23", toMinute: "00", flexibleType: "0",
+                                    holidayType: "0", holidayReason: "")
+        days[1] = calendarDay(1, today.adding(days: 1), invalid)
+        XCTAssertNil(ShifconCalendarSnapshot.make(from: calendarPeriod(days), now: today.date))
+
+        invalid = .dayOff
+        days[1] = calendarDay(1, today.adding(days: 1), invalid)
+        days.append(calendarDay(5, today.adding(days: 1), .dayOff))
+        XCTAssertNil(ShifconCalendarSnapshot.make(from: calendarPeriod(days), now: today.date))
+    }
+
+    func testCompleteAllOffSnapshotIsEmptyAndValid() throws {
+        let today = DayKey(year: 2026, month: 11, day: 8)
+        let days = (0..<5).map { i in calendarDay(i, today.adding(days: i), .dayOff) }
+        XCTAssertEqual(try XCTUnwrap(ShifconCalendarSnapshot.make(
+            from: calendarPeriod(days), now: today.date
+        )).count, 0)
+    }
+
     func testScrapedPageBecomesPeriod() throws {
         let json = """
         {"ok":true,"from":"20261108","to":"20261121","staff":"塩中 陽翔","store":"葛西店",
