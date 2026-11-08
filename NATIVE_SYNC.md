@@ -5,18 +5,21 @@ This branch adds a native EventKit writer and a separate verified COMPANY paysli
 - ConfirmedShiftCalendarWriter reconciles a complete, verified five-day roster.
 - Only Shift Note-owned events are changed; incomplete downloads cannot delete shifts.
 - CompanyPayrollStore stores exact payslip records in the device Keychain.
-- The income view distinguishes confirmed payroll from estimated earnings.
+- The income view distinguishes verified COMPANY payslips from estimated shift earnings.
 
-## Unverified inputs
+## Source verification
 
-The existing Shifcon HTML parser reads shift requests, not a verified confirmed roster.
-The separate neoshift repository explicitly disables its roster reader and returns
-an empty result. Do not import requested shifts as confirmed shifts.
+The current Shifcon integration reads the staffpage shift request form. Its fields include request/edit flags and submitted or editable values; the inspected app code does not establish that these values are the employer's confirmed roster. Do not treat them as confirmed shifts.
 
-The checked repositories contain no verified COMPANY payslip endpoint or field
-mapping. Until a legitimate authenticated source is established, there is no
-automatic payroll retrieval. Never label the existing estimates as confirmed.
+The COMPANY portal flow was inspected in the authenticated browser:
 
-When source adapters exist, invoke them on foreground launch/activation; iOS does
-not guarantee timed background WebKit execution. Protect all credentials locally
-and never commit payroll records or session cookies to GitHub.
+1. Open **照会 → 給与情報照会 → 給与明細**.
+2. The newest available month is linked directly; older items are behind **一覧表示**.
+3. A month detail page offers **PDF表示／保存**. It does not expose payroll amounts as readable page text.
+4. Continuing to **PDF保存** requires entering and confirming a PDF open password before the file can be saved.
+
+The PDF's field layout and a reliable way to extract its payroll values have not been verified. The portal flow therefore does not yet provide an automatic, validated payroll source. Never show shift-based estimates as confirmed payroll.
+
+## Refresh limits
+
+iOS does not guarantee timed background WKWebView execution. Any authenticated source adapter must refresh on foreground activation, preserve credentials only on device, validate the complete source response before replacing records, and keep verified payroll separate from estimates. Do not commit payroll records, PDF files, passwords, or session cookies to GitHub.
