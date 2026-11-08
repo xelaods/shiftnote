@@ -56,7 +56,8 @@ final class ConfirmedShiftCalendarWriter {
         let target = try ownedCalendar()
         let query = store.predicateForEvents(withStart: from, end: until, calendars: [target])
         let managed = store.events(matching: query).filter {
-            ($0.notes ?? "").hasPrefix(marker)
+            ($0.notes ?? "").hasPrefix(marker) &&
+            $0.startDate >= from && $0.startDate < until
         }
         var byID = Dictionary(grouping: managed, by: {
             String(($0.notes ?? "").dropFirst(marker.count))
