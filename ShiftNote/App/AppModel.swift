@@ -22,6 +22,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var hasAccess: Bool
     @Published private(set) var calendars: [EKCalendar] = []
     @Published private(set) var now = Date()
+    @Published private(set) var confirmedPayroll: [CompanyPayrollRecord] = []
     @Published private(set) var syncStatus: SyncStatus = .idle
 
     private let repository = ShiftRepository()
@@ -62,6 +63,7 @@ final class AppModel: ObservableObject {
     func reload() {
         now = Date()
         guard !isDemo else { return }
+        confirmedPayroll = CompanyPayrollStore.load()
         hasAccess = ShiftRepository.hasAccess
         calendars = hasAccess ? repository.calendars() : []
         if let id = settings.calendarIdentifier, hasAccess, !calendars.contains(where: { $0.calendarIdentifier == id }) {

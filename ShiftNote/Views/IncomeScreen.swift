@@ -15,6 +15,7 @@ struct IncomeScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     header.cinematicReveal(0)
+                    ConfirmedPayrollCard(year: year).cinematicReveal(1)
                     if !model.hasAccess {
                         AccessCard()
                     } else {
